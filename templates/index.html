@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>ETagMF — GA Recommender System</title>
+</head>
+<body>
+
+<nav>
+  <a href="/">&#127968; Demo</a>
+  <a href="/explain">&#129504; Algorithm Explained</a>
+  <a href="/paper-to-code">&#128196; Paper → Code</a>
+</nav>
+
+<header>
+  <h1>ETagMF — Genetic Algorithm Matrix Factorization Recommender System</h1>
+  <p>
+    Paper: <em>"A Genetic-Algorithms Matrix-Factorization Based Recommender System Model Using Tags"</em>
+    &nbsp;—&nbsp; <span>IEEE Access 2025 · DOI: 10.1109/ACCESS.2025.3550296</span>
+  </p>
+</header>
+
+{% if using_sample %}
+<div id="banner">
+  ⚠️ <strong>Demo mode:</strong> xlsx files not found in <code>data/</code>.
+  Using built-in sample data (10 users, 20 products).
+  Place your xlsx files in <code>data/</code> and refresh the page.
+</div>
+{% endif %}
+
+<main>
+<!-- ════════════════════════════════ LEFT PANEL ═══════════════════════════ -->
+<aside>
+
+  <!-- Dataset stats -->
+  <div>
+    <div><div>{{ num_users }}</div><div>Users</div></div>
+    <div><div>{{ num_products }}</div><div>Products</div></div>
+    <div><div>{{ num_ratings }}</div><div>Ratings in R</div></div>
+    <div><div>{{ num_tags }}</div><div>Tag Dimensions</div></div>
+  </div>
+
+  <!-- GA Parameters -->
+  <div>
+    <h2>⚙️ GA Parameters</h2>
+
+    <div>
+      <label>Target User</label>
+      <select id="user-id">
+        {% for uid in user_ids %}
+        <option value="{{ uid }}">User {{ uid }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label>Top-N Recommendations</label>
+      <input type="number" id="top-n" value="5" min="1" max="20"/>
+    </div>
+
+    <div>
+      <label>Population Size (Np) <span>(paper: varied 20–400)</span></label>
+      <input type="number" id="np" value="20" min="5" max="200"/>
+    </div>
+
+    <div>
+      <label>Generations (Ni) <span>(paper: 200–4000)</span></label>
+      <input type="number" id="ni" value="80" min="10" max="500"/>
+    </div>
+
+    <div>
+      <label>Crossover Prob. (Pc) <span>(paper: 0.8)</span></label>
+      <input type="number" id="pc" value="0.8" min="0.1" max="1" step="0.05"/>
+    </div>
+
+    <div>
+      <label>Mutation Prob. (Pm) <span>(paper: 0.5)</span></label>
+      <input type="number" id="pm" value="0.05" min="0.001" max="1" step="0.005"/>
+    </div>
+
+    <div>
+      <label>Random Seed</label>
+      <input type="number" id="seed" value="42" min="0"/>
+    </div>
+
+    <button id="run-btn" type="button" onclick="runGA()">▶ Run ETagMF Algorithm</button>
+  </div>
+
+  <!-- Paper ↔ Data Mapping -->
+  <div>
+    <h2>📄 Paper → Our Data Mapping</h2>
+    <div>
+      <div>Paper (ETagMF)</div>
+      <div>Our Adaptation</div>
+      <div>R (user × item)</div>
+      <div>ratings.xlsx + behavior.xlsx</div>
+      <div>P (item × tag)</div>
+      <div>category + price + behavior features</div>
+      <div>Q (user × tag) ← GA</div>
+      <div>user tag-affinities (learned)</div>
+      <div>Fitness = RMSE</div>
+      <div>√mean((R − Q·Pᵀ)²)</div>
+      <div>Tag genome (1128 tags)</div>
+      <div>{{ num_tags }} feature dimensions</div>
+    </div>
+
+    <div>
+      <strong>Tag Dimensions Used:</strong>
+      <div>
+        {% for t in tag_names %}
+        <span>{{ t }}</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Algorithm Steps -->
+  <div>
+    <h2>🧬 Algorithm Steps (Algorithm 1)</h2>
+    <ol>
+      <li>Build <strong>R</strong>: ratings + behavior → user-item matrix</li>
+      <li>Build <strong>P</strong>: product features → tag-genome matrix</li>
+      <li>Initialize <strong>Np</strong> random Q chromosomes ∈ [0,1]</li>
+      <li>Compute <strong>RMSE</strong> fitness for each chromosome</li>
+      <li>Select parents via <strong>Roulette Wheel</strong> (1/RMSE)</li>
+      <li><strong>Row-crossover</strong>: swap one user-row (prob Pc)</li>
+      <li><strong>Mutation</strong>: random gene ∈ [0,1] (prob Pm)</li>
+      <li>Keep best Q (<strong>elitism</strong>), repeat Ni times</li>
+      <li>Predict <strong>R̂ = Q·Pᵀ</strong> → top-N unrated items</li>
+    </ol>
+  </div>
+
+</aside>
+
+<!-- ═══════════════════════════════ RIGHT PANEL ══════════════════════════ -->
+<div>
+
+  <div id="err-box" hidden></div>
+
+  <div id="spinner" hidden><span></span>Running GA — please wait…</div>
+
+  <!-- RMSE convergence -->
+  <div>
+    <h2>📉 RMSE Convergence <small>(best per generation)</small></h2>
+    <div id="chart-wrap">
+      <div id="chart-placeholder">Run the algorithm to see convergence.</div>
+      <canvas id="rmse-canvas" hidden></canvas>
+    </div>
+    <div id="rmse-badge" hidden></div>
+  </div>
+
+  <!-- Results -->
+  <div id="res-grid" hidden>
+
+    <!-- Recommendations -->
+    <div>
+      <h2>🎯 Top Recommendations</h2>
+      <table id="recs-tbl">
+        <thead><tr>
+          <th>#</th><th>Product</th><th>Category</th>
+          <th>Price (€)</th><th>Predicted Score</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- User's existing ratings -->
+    <div>
+      <h2>⭐ User's Known Ratings</h2>
+      <table id="rated-tbl">
+        <thead><tr>
+          <th>Product</th><th>Category</th><th>Price (€)</th><th>Rating</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Learned Q values (tag affinities) -->
+  <div id="q-card" hidden>
+    <h2>🧠 Learned Q Values — User's Tag Affinities</h2>
+    <p>
+      These are the GA-optimised values of Q[user] — how much this user
+      "aligns" with each tag dimension. Higher = stronger affinity.
+    </p>
+    <table id="q-tbl">
+      <thead><tr><th>Tag Dimension</th><th>Affinity (Q value)</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+</div>
+</main>
+
+<script>
+function stars(r){
+  const f=Math.round(r); return '★'.repeat(f)+'☆'.repeat(5-f);
+}
+
+function drawChart(history){
+  const canvas=document.getElementById('rmse-canvas');
+  const W=canvas.offsetWidth||700, H=canvas.offsetHeight||210;
+  canvas.width=W; canvas.height=H;
+  const ctx=canvas.getContext('2d');
+  const PAD={t:14,r:18,b:38,l:56};
+  const pw=W-PAD.l-PAD.r, ph=H-PAD.t-PAD.b;
+
+  const minV=Math.min(...history), maxV=Math.max(...history);
+  const rng=maxV-minV||0.001;
+
+  ctx.clearRect(0,0,W,H);
+
+  ctx.strokeStyle='#e3eaf4'; ctx.lineWidth=1;
+  for(let i=0;i<=4;i++){
+    const y=PAD.t+(ph/4)*i;
+    ctx.beginPath(); ctx.moveTo(PAD.l,y); ctx.lineTo(PAD.l+pw,y); ctx.stroke();
+    ctx.fillStyle='#9aacc0'; ctx.font='11px Segoe UI,sans-serif';
+    ctx.textAlign='right';
+    ctx.fillText((maxV-(rng/4)*i).toFixed(3), PAD.l-6, y+4);
+  }
+
+  const step=Math.max(1,Math.ceil(history.length/7));
+  ctx.textAlign='center'; ctx.fillStyle='#9aacc0';
+  for(let i=0;i<history.length;i+=step){
+    const x=PAD.l+(i/(history.length-1))*pw;
+    ctx.fillText(i+1, x, H-PAD.b+16);
+  }
+  ctx.fillText('Generation', PAD.l+pw/2, H-4);
+
+  const grad=ctx.createLinearGradient(0,PAD.t,0,PAD.t+ph);
+  grad.addColorStop(0,'rgba(26,74,126,.22)');
+  grad.addColorStop(1,'rgba(26,74,126,.02)');
+  ctx.beginPath();
+  history.forEach((v,i)=>{
+    const x=PAD.l+(i/(history.length-1))*pw;
+    const y=PAD.t+(1-(v-minV)/rng)*ph;
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  });
+  ctx.lineTo(PAD.l+pw,PAD.t+ph);
+  ctx.lineTo(PAD.l,PAD.t+ph);
+  ctx.closePath(); ctx.fillStyle=grad; ctx.fill();
+
+  ctx.beginPath();
+  ctx.strokeStyle='#1a4a7e'; ctx.lineWidth=2.5; ctx.lineJoin='round';
+  history.forEach((v,i)=>{
+    const x=PAD.l+(i/(history.length-1))*pw;
+    const y=PAD.t+(1-(v-minV)/rng)*ph;
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+
+  const lx=PAD.l+pw;
+  const ly=PAD.t+(1-(history[history.length-1]-minV)/rng)*ph;
+  ctx.beginPath(); ctx.arc(lx,ly,5,0,Math.PI*2);
+  ctx.fillStyle='#1a4a7e'; ctx.fill();
+}
+
+function fillRecs(recs){
+  const tb=document.querySelector('#recs-tbl tbody');
+  tb.innerHTML='';
+  recs.forEach((r,i)=>{
+    tb.insertAdjacentHTML('beforeend',`
+      <tr>
+        <td><strong>${i+1}</strong></td>
+        <td>Product ${r.product_id}</td>
+        <td>${r.category}</td>
+        <td>${r.price.toFixed(2)} €</td>
+        <td>${r.predicted.toFixed(3)}</td>
+      </tr>`);
+  });
+}
+
+function fillRated(ratings){
+  const tb=document.querySelector('#rated-tbl tbody');
+  tb.innerHTML='';
+  if(!ratings.length){
+    tb.innerHTML='<tr><td colspan="4">No ratings found.</td></tr>';
+    return;
+  }
+  ratings.forEach(r=>{
+    tb.insertAdjacentHTML('beforeend',`
+      <tr>
+        <td>Product ${r.product_id}</td>
+        <td>${r.category}</td>
+        <td>${r.price.toFixed(2)} €</td>
+        <td><span>${stars(r.rating)}</span> ${r.rating}</td>
+      </tr>`);
+  });
+}
+
+function fillQTable(qvals){
+  const tb=document.querySelector('#q-tbl tbody');
+  tb.innerHTML='';
+  qvals.forEach(q=>{
+    tb.insertAdjacentHTML('beforeend',`
+      <tr>
+        <td><strong>${q.tag}</strong></td>
+        <td>${q.affinity.toFixed(4)}</td>
+      </tr>`);
+  });
+}
+
+async function runGA(){
+  const btn=document.getElementById('run-btn');
+  const spinner=document.getElementById('spinner');
+  const errBox=document.getElementById('err-box');
+  const resGrid=document.getElementById('res-grid');
+  const qCard=document.getElementById('q-card');
+
+  btn.disabled=true;
+  spinner.hidden=false;
+  errBox.hidden=true;
+  resGrid.hidden=true;
+  qCard.hidden=true;
+
+  const payload={
+    user_id: parseInt(document.getElementById('user-id').value),
+    top_n:   parseInt(document.getElementById('top-n').value),
+    Np:      parseInt(document.getElementById('np').value),
+    Ni:      parseInt(document.getElementById('ni').value),
+    Pc:      parseFloat(document.getElementById('pc').value),
+    Pm:      parseFloat(document.getElementById('pm').value),
+    seed:    parseInt(document.getElementById('seed').value),
+  };
+
+  try{
+    const resp=await fetch('/run',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    if(!resp.ok) throw new Error(`Server error ${resp.status}`);
+    const data=await resp.json();
+
+    const canvas=document.getElementById('rmse-canvas');
+    document.getElementById('chart-placeholder').hidden=true;
+    canvas.hidden=false;
+    const badge=document.getElementById('rmse-badge');
+    badge.hidden=false;
+    badge.textContent=`Final RMSE: ${data.final_rmse.toFixed(5)}`;
+    drawChart(data.rmse_history);
+
+    fillRecs(data.recommendations);
+    fillRated(data.user_ratings);
+    resGrid.hidden=false;
+
+    if(data.q_values && data.q_values.length){
+      fillQTable(data.q_values);
+      qCard.hidden=false;
+    }
+
+  }catch(e){
+    errBox.textContent='❌ '+e.message;
+    errBox.hidden=false;
+  }finally{
+    btn.disabled=false;
+    spinner.hidden=true;
+  }
+}
+</script>
+
+</body>
+</html>
