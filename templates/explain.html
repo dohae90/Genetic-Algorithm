@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>ETagMF — Algorithm Explained</title>
+</head>
+<body>
+
+<!-- Navigation -->
+<nav>
+  <a href="/">&#127968; Demo</a>
+  <a href="/explain">&#129504; Algorithm Explained</a>
+  <a href="/paper-to-code">&#128196; Paper → Code</a>
+</nav>
+
+<header>
+  <h1>&#129504; ETagMF Algorithm — Complete Explanation</h1>
+  <p>
+    A step-by-step visual walkthrough of every component of the
+    <em>Genetic Algorithm + Matrix Factorization</em> recommender system.
+    Based on: <span>"A Genetic-Algorithms Matrix-Factorization Based Recommender System Model Using Tags" — IEEE Access 2025</span>
+  </p>
+</header>
+
+<div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- 1. THE BIG PICTURE                                                 -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#127757;</div>
+    <div>
+      <h2>The Big Picture — What Problem Are We Solving?</h2>
+      <p>Understanding the goal before diving into math</p>
+    </div>
+  </div>
+  <div>
+    <p>
+      Imagine you have a store with many products and many users. Each user has rated
+      <strong>some</strong> products, but not all of them. We want to <strong>predict which unrated
+      products a user would most enjoy</strong> — so we can recommend them.
+    </p>
+
+    <div>
+      <!-- R matrix: user-item ratings -->
+      <div>
+        <div>R — User × Product Ratings</div>
+        <div>
+          <div></div>
+          <div>P1</div>
+          <div>P2</div>
+          <div>P3</div>
+          <div>P4</div>
+          <div>U1</div>
+          <div>4.5</div>
+          <div>?</div>
+          <div>3.0</div>
+          <div>?</div>
+          <div>U2</div>
+          <div>?</div>
+          <div>5.0</div>
+          <div>?</div>
+          <div>2.0</div>
+          <div>U3</div>
+          <div>1.5</div>
+          <div>?</div>
+          <div>?</div>
+          <div>4.0</div>
+        </div>
+      </div>
+
+      <div>
+        <div>We want to fill in the <span>?</span> cells</div>
+        <div>using the pattern learned from known ratings</div>
+        <div>&#8595;</div>
+      </div>
+
+      <!-- R-hat matrix: predicted -->
+      <div>
+        <div>R̂ — Predicted (after GA)</div>
+        <div>
+          <div></div>
+          <div>P1</div>
+          <div>P2</div>
+          <div>P3</div>
+          <div>P4</div>
+          <div>U1</div>
+          <div>4.5</div>
+          <div>3.8</div>
+          <div>3.0</div>
+          <div>1.2</div>
+          <div>U2</div>
+          <div>4.1</div>
+          <div>5.0</div>
+          <div>3.5</div>
+          <div>2.0</div>
+          <div>U3</div>
+          <div>1.5</div>
+          <div>2.2</div>
+          <div>3.7</div>
+          <div>4.0</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <strong>Key insight:</strong> Instead of filling the matrix directly, we factorize it into two smaller
+      matrices: <strong>Q</strong> (user taste profiles) and <strong>P</strong> (product feature vectors).
+      Their product Q × Pᵀ gives us all predictions at once.
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- 2. MATRIX FACTORIZATION                                            -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#129518;</div>
+    <div>
+      <h2>Matrix Factorization — The Core Math</h2>
+      <p>Breaking one big matrix into two smaller, meaningful ones</p>
+    </div>
+  </div>
+  <div>
+
+    <p>
+      Matrix Factorization says: <em>"A big sparse matrix can be approximated as the product
+      of two dense matrices."</em> In our case:
+    </p>
+
+    <div>
+<span>R̂</span>  =  <span>Q</span>  ×  <span>Pᵀ</span>
+
+<span>Where:</span>
+  <span>Q</span>  =  User-Tag matrix   (users  × tags)  ← <strong>learned by the GA</strong>
+  <span>P</span>  =  Item-Tag matrix   (items  × tags)  ← built from product features
+  <span>R̂</span>  =  Predicted ratings  (users  × items)  ← what we want
+    </div>
+
+    <div>
+      <!-- Q matrix -->
+      <div>
+        <div>Q — User × Tags (learned)</div>
+        <div>
+          <div></div>
+          <div>Electronics</div>
+          <div>Price</div>
+          <div>Views</div>
+          <div>U1</div>
+          <div>0.82</div>
+          <div>0.31</div>
+          <div>0.67</div>
+          <div>U2</div>
+          <div>0.15</div>
+          <div>0.77</div>
+          <div>0.44</div>
+          <div>U3</div>
+          <div>0.59</div>
+          <div>0.20</div>
+          <div>0.91</div>
+        </div>
+      </div>
+
+      <div>×</div>
+
+      <!-- P transposed matrix -->
+      <div>
+        <div>Pᵀ — Tags × Items (fixed)</div>
+        <div>
+          <div></div>
+          <div>P1</div>
+          <div>P2</div>
+          <div>P3</div>
+          <div>Electronics</div>
+          <div>1.0</div>
+          <div>0.0</div>
+          <div>1.0</div>
+          <div>Price</div>
+          <div>0.85</div>
+          <div>0.32</div>
+          <div>0.60</div>
+          <div>Views</div>
+          <div>0.70</div>
+          <div>0.90</div>
+          <div>0.45</div>
+        </div>
+      </div>
+
+      <div>=</div>
+
+      <!-- R-hat -->
+      <div>
+        <div>R̂ — Predicted Scores</div>
+        <div>
+          <div></div>
+          <div>P1</div>
+          <div>P2</div>
+          <div>P3</div>
+          <div>U1</div>
+          <div>0.89</div>
+          <div>0.54</div>
+          <div>0.78</div>
+          <div>U2</div>
+          <div>0.42</div>
+          <div>0.81</div>
+          <div>0.37</div>
+          <div>U3</div>
+          <div>0.76</div>
+          <div>0.89</div>
+          <div>0.67</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <strong>Every predicted score</strong> R̂[u][i] = dot product of row <em>u</em> of Q
+      with row <em>i</em> of P. This is computed as:
+      <code>sum(Q[u][t] × P[i][t] for t in all_tags)</code>
+      — i.e., how much user <em>u</em>'s tag affinities match item <em>i</em>'s tag values.
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- 3. THE TAG GENOME (P MATRIX)                                       -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#127991;</div>
+    <div>
+      <h2>The P Matrix — Tag Genome (Item Feature Vectors)</h2>
+      <p>How each product is described as a numeric vector</p>
+    </div>
+  </div>
+  <div>
+
+    <p>
+      The original paper uses <strong>MovieLens tag genome</strong> with 1128 tags like
+      "suspenseful", "visually stunning", etc. — each tag scored 0–1 for every movie.
+      Our system builds an equivalent for products using <strong>measurable features</strong>:
+    </p>
+
+    <table>
+      <thead><tr>
+        <th>Tag Dimension</th>
+        <th>How It's Computed</th>
+        <th>Value Range</th>
+        <th>What It Encodes</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td><span>Electronics</span> <span>Clothing</span> ... (one per category)</td>
+          <td>1.0 if product belongs to this category, else 0.0</td>
+          <td>0 or 1</td>
+          <td>Category membership (one-hot encoding)</td>
+        </tr>
+        <tr>
+          <td><span>Price-Level</span></td>
+          <td>product_price / max_price_in_dataset</td>
+          <td>[0, 1]</td>
+          <td>Relative price — is it cheap or expensive?</td>
+        </tr>
+        <tr>
+          <td><span>View-Count</span></td>
+          <td>total_views_for_product / max_views</td>
+          <td>[0, 1]</td>
+          <td>How popular (views) is this product?</td>
+        </tr>
+        <tr>
+          <td><span>Click-Rate</span></td>
+          <td>total_clicks_for_product / max_clicks</td>
+          <td>[0, 1]</td>
+          <td>How often do users click on it?</td>
+        </tr>
+        <tr>
+          <td><span>Purchase-Rate</span></td>
+          <td>total_purchases_for_product / max_purchases</td>
+          <td>[0, 1]</td>
+          <td>How often does viewing lead to buying?</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div>
+      <strong>Example: P vector for a mid-range Electronics product</strong>
+      <div>
+        <div><div>Electronics</div><div>1.00</div></div>
+        <div><div>Clothing</div><div>0.00</div></div>
+        <div><div>Books</div><div>0.00</div></div>
+        <div><div>Home</div><div>0.00</div></div>
+        <div><div>Sports</div><div>0.00</div></div>
+        <div><div>Price-Level</div><div>0.54</div></div>
+        <div><div>View-Count</div><div>0.78</div></div>
+        <div><div>Click-Rate</div><div>0.62</div></div>
+        <div><div>Purchase-Rate</div><div>0.45</div></div>
+      </div>
+      <p>
+        This product is clearly in Electronics (1.0), has a mid-range price (0.54),
+        and is moderately popular (views: 0.78, clicks: 0.62, purchases: 0.45).
+      </p>
+    </div>
+
+    <div>
+      <strong>Important:</strong> The P matrix is <strong>fixed</strong> — it is computed once from the data
+      and does NOT change during the GA. Only the <strong>Q matrix</strong> (user preferences) is evolved.
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- 4. THE CHROMOSOME (Q MATRIX)                                       -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#129516;</div>
+    <div>
+      <h2>The Chromosome — How the GA Represents Solutions</h2>
+      <p>Each candidate solution is an entire Q matrix encoded as a chromosome</p>
+    </div>
+  </div>
+  <div>
+
+    <p>
+      In a Genetic Algorithm, each <strong>candidate solution</strong> is called a <strong>chromosome</strong>.
+      In ETagMF, <strong>one chromosome = one complete Q matrix</strong>, which represents
+      the tag affinities for all users simultaneously.
+    </p>
+
+    <div>
+Chromosome  =  Q matrix  =  [
+  User 1 row:  [0.72, 0.15, 0.88, 0.33, 0.61, 0.50, 0.29, 0.74, 0.12],
+  User 2 row:  [0.08, 0.91, 0.44, 0.67, 0.23, 0.85, 0.56, 0.38, 0.77],
+  User 3 row:  [0.55, 0.42, 0.19, 0.80, 0.73, 0.11, 0.96, 0.60, 0.34],
+  ...
+]
+
+<span>Each row = one user's learned taste profile (values ∈ [0,1])</span>
+<span>Each column = one tag dimension</span>
+<span>Population = multiple such chromosomes (Np chromosomes total)</span>
+    </div>
+
+    <strong>Visual: One chromosome row (User 1's tag affinities)</strong>
+    <div>
+      <div><div>Electronics</div><div>0.82</div></div>
+      <div><div>Clothing</div><div>0.14</div></div>
+      <div><div>Books</div><div>0.35</div></div>
+      <div><div>Home</div><div>0.09</div></div>
+      <div><div>Sports</div><div>0.55</div></div>
+      <div><div>Price-Level</div><div>0.31</div></div>
+      <div><div>View-Count</div><div>0.67</div></div>
+      <div><div>Click-Rate</div><div>0.72</div></div>
+      <div><div>Purchase-Rate</div><div>0.48</div></div>
+    </div>
+    <p>
+      This user strongly prefers Electronics (0.82) and has high engagement with views/clicks (0.67, 0.72),
+      but is not a big Clothing shopper (0.14). The GA <em>discovers</em> these values automatically.
+    </p>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- 5. FITNESS FUNCTION (RMSE)                                         -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#127919;</div>
+    <div>
+      <h2>Fitness Function — How Good Is a Chromosome?</h2>
+      <p>RMSE measures how closely predictions match actual ratings</p>
+    </div>
+  </div>
+  <div>
+
+    <p>
+      The <strong>fitness</strong> of a chromosome (a Q matrix) is measured by how accurately it
+      predicts the known ratings. We use <strong>RMSE — Root Mean Squared Error</strong>.
+      <em>Lower RMSE = better chromosome.</em>
+    </p>
+
+    <div>
+<span>Step 1: For each known rating (user u, item i):</span>
+  predicted  =  dot(Q[u], P[i])  =  Σ (Q[u][t] × P[i][t])   for all tags t
+
+<span>Step 2: Normalize actual rating to [0,1] (since Q·Pᵀ ∈ [0,1]):</span>
+  actual_norm  =  (actual_rating - 1) / 4
+
+<span>Step 3: Compute RMSE over all known (u, i) pairs:</span>
+  <span>RMSE  =  √( mean( (actual_norm - predicted)² ) )</span>
+
+<span>Step 4: Fitness (for selection) = 1 / RMSE  (lower error = higher fitness)</span>
+    </div>
+
+    <div>
+      <strong>Why normalize ratings?</strong> The dot product Q·P lands in [0,1] because all values
+      in Q and P are in [0,1]. But actual ratings are in [1,5]. So we normalize ratings to [0,1]
+      using <code>(r−1)/4</code> before computing RMSE, bringing both scales together.
+    </div>
+
+    <div>
+      <strong>Worked example: comparing one prediction</strong>
+      <table>
+        <thead><tr><th>Actual Rating</th><th>Normalized</th><th>Predicted Q·Pᵀ</th><th>Squared Error</th></tr></thead>
+        <tbody>
+          <tr><td>4.5</td><td>(4.5−1)/4 = 0.875</td><td>0.820</td><td>(0.875−0.820)² = 0.00302</td></tr>
+          <tr><td>2.0</td><td>(2.0−1)/4 = 0.250</td><td>0.310</td><td>(0.250−0.310)² = 0.00360</td></tr>
+          <tr><td>5.0</td><td>(5.0−1)/4 = 1.000</td><td>0.930</td><td>(1.000−0.930)² = 0.00490</td></tr>
+          <tr><td colspan="3">RMSE = √((0.00302+0.00360+0.00490)/3)</td><td>= 0.0627</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- 6. THE GENETIC ALGORITHM — FULL FLOW                              -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#129516;</div>
+    <div>
+      <h2>The Genetic Algorithm — Complete Flow</h2>
+      <p>All 5 components of the evolutionary loop, generation by generation</p>
+    </div>
+  </div>
+  <div>
+
+    <div>
+      <div>
+        <div>&#127801;</div>
+        <div>1. Initialization</div>
+        <div>Create Np random Q matrices. Every gene ∈ [0,1] randomly.</div>
+      </div>
+      <div>&#8594;</div>
+      <div>
+        <div>&#127919;</div>
+        <div>2. Fitness Evaluation</div>
+        <div>Compute RMSE for each chromosome.</div>
+      </div>
+      <div>&#8594;</div>
+      <div>
+        <div>&#127922;</div>
+        <div>3. Selection</div>
+        <div>Roulette Wheel picks 2 parents. Lower RMSE = higher chance.</div>
+      </div>
+      <div>&#8594;</div>
+      <div>
+        <div>&#9986;</div>
+        <div>4. Crossover</div>
+        <div>Swap one random row between parents (prob Pc = 0.8).</div>
+      </div>
+      <div>&#8594;</div>
+      <div>
+        <div>&#127808;</div>
+        <div>5. Mutation</div>
+        <div>Replace random genes with new [0,1] values (prob Pm).</div>
+      </div>
+      <div>&#8594;</div>
+      <div>
+        <div>&#127942;</div>
+        <div>6. Elitism</div>
+        <div>Best chromosome always survives to next generation.</div>
+      </div>
+    </div>
+
+    <div>
+      <strong>Repeat steps 3–6 for Ni generations.</strong> The population gradually
+      evolves toward better Q matrices (lower RMSE). After all generations, the
+      best Q ever seen is used to generate recommendations.
+    </div>
+
+    <!-- Detailed Steps -->
+    <ol>
+      <li>
+        <div>
+          <div>Initialization — Seed the population</div>
+          <div>
+            Create Np chromosomes (e.g., 20). Each chromosome is a full Q matrix
+            with all genes drawn uniformly at random from [0,1].
+            This gives the GA a diverse starting point to explore from.
+          </div>
+        </div>
+      </li>
+      <li>
+        <div>
+          <div>Fitness Evaluation — Score every chromosome</div>
+          <div>
+            For each of the Np chromosomes, compute RMSE(R, Q×Pᵀ).
+            Store the RMSE of each chromosome. Track the globally best chromosome so far.
+          </div>
+        </div>
+      </li>
+      <li>
+        <div>
+          <div>Roulette Wheel Selection — Pick two parents</div>
+          <div>
+            Assign each chromosome a selection probability proportional to
+            <strong>1/RMSE</strong> (the lower the error, the higher the chance of being selected).
+            Spin the roulette wheel twice to get Parent 1 and Parent 2.
+          </div>
+        </div>
+      </li>
+      <li>
+        <div>
+          <div>Row Crossover — Combine parents</div>
+          <div>
+            With probability Pc (default 0.8): pick a random row index (a random user's row),
+            then swap that row between Parent 1 and Parent 2 to create two children.
+            With probability (1-Pc): children are exact copies of parents.
+          </div>
+        </div>
+      </li>
+      <li>
+        <div>
+          <div>Mutation — Add randomness to avoid stuck solutions</div>
+          <div>
+            For every gene in every child: with probability Pm, replace the gene
+            with a completely new random value in [0,1].
+            This prevents the population from converging too early (premature convergence).
+          </div>
+        </div>
+      </li>
+      <li>
+        <div>
+          <div>Elitism — Preserve the best solution found</div>
+          <div>
+            The best chromosome seen so far is always carried into the next generation unchanged.
+            This guarantees the GA never loses its best solution.
+          </div>
+        </div>
+      </li>
+      <li>
+        <div>
+          <div>Repeat until Ni generations are complete</div>
+          <div>
+            Go back to step 3. Each generation the population gradually improves.
+            The RMSE chart on the main page shows this convergence curve.
+          </div>
+        </div>
+      </li>
+    </ol>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- 7. SELECTION DETAIL                                                -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#127922;</div>
+    <div>
+      <h2>Roulette Wheel Selection — Detailed Walkthrough</h2>
+      <p>How chromosomes compete to be parents based on their fitness</p>
+    </div>
+  </div>
+  <div>
+
+    <p>
+      The roulette wheel gives each chromosome a "slice" of the wheel proportional to its
+      fitness (1/RMSE). Spinning the wheel (picking a random number in [0, total_weight])
+      selects a chromosome — better ones have bigger slices.
+    </p>
+
+    <div>
+<span>Given chromosomes with RMSE values:</span>
+  Chrom A: RMSE = 0.10   →  weight = 1/0.10 = <span>10.0</span>  (best!)
+  Chrom B: RMSE = 0.20   →  weight = 1/0.20 = <span>5.0</span>
+  Chrom C: RMSE = 0.50   →  weight = 1/0.50 = <span>2.0</span>
+  Chrom D: RMSE = 1.00   →  weight = 1/1.00 = 1.0   (worst)
+  ─────────────────────────────────────────────
+  Total weight = 18.0
+
+<span>Selection probabilities:</span>
+  A: 10/18 = 55.6%   B: 5/18 = 27.8%   C: 2/18 = 11.1%   D: 1/18 = 5.5%
+    </div>
+
+    <div>
+      <div>
+        <div></div>
+        <div>Chrom A</div>
+        <div>55.6%</div>
+      </div>
+      <div>
+        <div></div>
+        <div>Chrom B</div>
+        <div>27.8%</div>
+      </div>
+      <div>
+        <div></div>
+        <div>Chrom C</div>
+        <div>11.1%</div>
+      </div>
+      <div>
+        <div></div>
+        <div>Chrom D</div>
+        <div>5.5%</div>
+      </div>
+      <div>
+        &#8592; Bar height = selection probability.<br><br>
+        Chromosome A (lowest RMSE) has the biggest chance of being selected as a parent.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- 8. CROSSOVER DETAIL                                                -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#9986;</div>
+    <div>
+      <h2>Row Crossover — Combining Two Parent Solutions</h2>
+      <p>A single row (user) is swapped between parents to create two children</p>
+    </div>
+  </div>
+  <div>
+
+    <p>
+      Standard genetic crossover exchanges segments of chromosomes.
+      In ETagMF, since our chromosome is a <strong>matrix</strong> (not a flat list),
+      crossover swaps an entire <strong>row</strong> (one user's preference vector) between two parents.
+    </p>
+
+    <strong>Example: Row 2 (User 2) is the crossover point</strong>
+
+    <div>
+      <!-- Parent 1 -->
+      <div>
+        <div>
+          <div>Parent 1</div>
+          <div><div>U1:</div><div>0.82</div><div>0.15</div><div>0.67</div></div>
+          <div><div>U2:</div><div>0.44</div><div>0.91</div><div>0.23</div></div>
+          <div><div>U3:</div><div>0.59</div><div>0.38</div><div>0.72</div></div>
+        </div>
+        <div>highlighted row gets swapped</div>
+      </div>
+
+      <div>&#8646;</div>
+
+      <!-- Parent 2 -->
+      <div>
+        <div>
+          <div>Parent 2</div>
+          <div><div>U1:</div><div>0.31</div><div>0.78</div><div>0.55</div></div>
+          <div><div>U2:</div><div>0.08</div><div>0.62</div><div>0.87</div></div>
+          <div><div>U3:</div><div>0.20</div><div>0.44</div><div>0.11</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div>&#8595;</div>
+
+    <div>
+      <!-- Child 1 -->
+      <div>
+        <div>
+          <div>Child 1</div>
+          <div><div>U1:</div><div>0.82</div><div>0.15</div><div>0.67</div></div>
+          <div><div>U2:</div><div>0.08</div><div>0.62</div><div>0.87</div></div>
+          <div><div>U3:</div><div>0.59</div><div>0.38</div><div>0.72</div></div>
+        </div>
+        <div>took U2 row from Parent 2</div>
+      </div>
+
+      <div>&amp;</div>
+
+      <!-- Child 2 -->
+      <div>
+        <div>
+          <div>Child 2</div>
+          <div><div>U1:</div><div>0.31</div><div>0.78</div><div>0.55</div></div>
+          <div><div>U2:</div><div>0.44</div><div>0.91</div><div>0.23</div></div>
+          <div><div>U3:</div><div>0.20</div><div>0.44</div><div>0.11</div></div>
+        </div>
+        <div>took U2 row from Parent 1</div>
+      </div>
+    </div>
+
+    <div>
+      <strong>Why row crossover?</strong> A "row" in Q represents one user's full preference profile.
+      Swapping a user row means: "combine the good preference model of one chromosome's users
+      with the good preference model of another chromosome's users." This is biologically analogous
+      to combining traits from two parents.
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- 9. MUTATION                                                        -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#127808;</div>
+    <div>
+      <h2>Mutation — Keeping Diversity Alive</h2>
+      <p>Randomly altering genes to explore new areas of the solution space</p>
+    </div>
+  </div>
+  <div>
+
+    <p>
+      After crossover, each gene in the child chromosome has a small probability <strong>Pm</strong>
+      of being replaced by a brand-new random value in [0,1]. This prevents the population
+      from getting stuck in a local optimum.
+    </p>
+
+    <div>
+<span>For each gene g in the chromosome:</span>
+  if random() &lt; Pm:
+      g_new = random()   <span>← completely new random value in [0,1]</span>
+  else:
+      g_new = g          <span>← keep original gene</span>
+    </div>
+
+    <strong>Before and after mutation (Pm = 0.05, 5% chance per gene):</strong>
+    <div>
+      <div>
+        <div>Before mutation:</div>
+        <div>
+          <div><div>Elec.</div><div>0.82</div></div>
+          <div><div>Cloth.</div><div>0.14</div></div>
+          <div><div>Books</div><div>0.35</div></div>
+          <div><div>Home</div><div>0.09</div></div>
+          <div><div>Price</div><div>0.31</div></div>
+          <div><div>Views</div><div>0.67</div></div>
+        </div>
+      </div>
+      <div>
+        <div>After mutation (Books and Views mutated):</div>
+        <div>
+          <div><div>Elec.</div><div>0.82</div></div>
+          <div><div>Cloth.</div><div>0.14</div></div>
+          <div><div>Books</div><div>0.91</div></div>
+          <div><div>Home</div><div>0.09</div></div>
+          <div><div>Price</div><div>0.31</div></div>
+          <div><div>Views</div><div>0.03</div></div>
+        </div>
+        <div>&#128308; = mutated genes</div>
+      </div>
+    </div>
+
+    <div>
+      <strong>Mutation rate trade-off:</strong> Too high Pm (e.g., 0.5) → random search, slow convergence.
+      Too low Pm (e.g., 0.001) → premature convergence, stuck in local optima.
+      The paper uses 0.5 for MovieLens (1128 tags), but our system uses a smaller default (0.05)
+      since we have far fewer tag dimensions.
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- 10. MAKING RECOMMENDATIONS                                         -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#127775;</div>
+    <div>
+      <h2>Making Recommendations — The Final Step</h2>
+      <p>Using the learned Q matrix to predict scores for unseen items</p>
+    </div>
+  </div>
+  <div>
+
+    <p>
+      Once the GA converges and we have the optimal Q matrix, generating recommendations
+      for a target user is a simple dot-product operation:
+    </p>
+
+    <ol>
+      <li>
+        <div>
+          <div>Extract the user's row from Q</div>
+          <div>
+            <code>q_row = Q[user_index]</code> — this is the learned preference vector for the target user.
+          </div>
+        </div>
+      </li>
+      <li>
+        <div>
+          <div>Find all products the user has NOT already rated</div>
+          <div>
+            We skip products already in R for this user — no point recommending what they've already reviewed.
+          </div>
+        </div>
+      </li>
+      <li>
+        <div>
+          <div>Compute a predicted score for each unrated product</div>
+          <div>
+            <code>score(product_i) = dot(q_row, P[product_i]) = Σ q_row[t] × P[i][t]</code>
+            for all tag dimensions t.
+          </div>
+        </div>
+      </li>
+      <li>
+        <div>
+          <div>Sort by predicted score (descending) and return top-N</div>
+          <div>
+            The products with the highest predicted scores are recommended. These are the items
+            whose feature vector best matches the user's learned taste profile.
+          </div>
+        </div>
+      </li>
+    </ol>
+
+    <div>
+      <strong>Interpretation of scores:</strong> A score close to 1.0 means the user's tag affinities
+      strongly align with the product's tag values. A score near 0 means little alignment.
+      The absolute value matters less than the <em>ranking</em> — we want the top-N relative to each other.
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- 11. PARAMETERS SUMMARY                                             -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#9881;</div>
+    <div>
+      <h2>GA Parameters — What They Control</h2>
+      <p>Understanding every knob you can turn on the main page</p>
+    </div>
+  </div>
+  <div>
+
+    <table>
+      <thead><tr>
+        <th>Parameter</th>
+        <th>Paper Notation</th>
+        <th>What It Controls</th>
+        <th>Effect of Higher Value</th>
+        <th>Paper Default</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Population Size</strong></td>
+          <td>Np</td>
+          <td>Number of chromosomes (Q matrices) in each generation</td>
+          <td>More diversity, better exploration — but slower per generation</td>
+          <td>20 – 400</td>
+        </tr>
+        <tr>
+          <td><strong>Generations</strong></td>
+          <td>Ni (MaxGeneration)</td>
+          <td>How many evolution cycles to run</td>
+          <td>More refinement, lower RMSE — but longer runtime</td>
+          <td>200 – 4000</td>
+        </tr>
+        <tr>
+          <td><strong>Crossover Prob.</strong></td>
+          <td>Pc</td>
+          <td>Probability that two parents exchange a row</td>
+          <td>More gene mixing, faster convergence but more disruption</td>
+          <td>0.8</td>
+        </tr>
+        <tr>
+          <td><strong>Mutation Prob.</strong></td>
+          <td>Pm</td>
+          <td>Probability each gene is randomly replaced</td>
+          <td>More exploration, avoids local optima — too high = random walk</td>
+          <td>0.5</td>
+        </tr>
+        <tr>
+          <td><strong>Random Seed</strong></td>
+          <td>—</td>
+          <td>Starting state for all random number generation</td>
+          <td>Different seed = different (but comparably good) result</td>
+          <td>42</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</div><!-- .page -->
+
+<footer>
+  ETagMF Recommender · IEEE Access 2025 · DOI: 10.1109/ACCESS.2025.3550296
+</footer>
+
+</body>
+</html>
