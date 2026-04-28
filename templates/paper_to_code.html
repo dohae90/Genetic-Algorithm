@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>ETagMF — Paper → Code</title>
+</head>
+<body>
+
+<!-- Navigation -->
+<nav>
+  <a href="/">&#127968; Demo</a>
+  <a href="/explain">&#129504; Algorithm Explained</a>
+  <a href="/paper-to-code">&#128196; Paper → Code</a>
+</nav>
+
+<header>
+  <h1>&#128196; Paper → Code — How We Implemented ETagMF</h1>
+  <p>
+    A complete mapping from every equation and concept in
+    <em>"A Genetic-Algorithms Matrix-Factorization Based Recommender System Model Using Tags"</em>
+    (IEEE Access 2025) to the actual Python functions in <code>app.py</code>.
+    Includes every design decision and adaptation made for our product recommendation context.
+  </p>
+</header>
+
+<div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- OVERVIEW: PAPER vs OUR SYSTEM                                      -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#128202;</div>
+    <div>
+      <h2>Overview — Paper vs Our System</h2>
+      <p>What the paper uses and how we adapted it for product recommendation</p>
+    </div>
+  </div>
+  <div>
+
+    <table>
+      <thead><tr>
+        <th>&#128196; Paper (ETagMF — MovieLens)</th>
+        <th>&#8594;</th>
+        <th>&#128187; Our System (Product Recommender)</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td><span>Dataset</span> MovieLens 20M (movies + tags)</td>
+          <td>&#8594;</td>
+          <td><span>Dataset</span> users.xlsx, products.xlsx, ratings.xlsx, behavior.xlsx</td>
+        </tr>
+        <tr>
+          <td><span>Items</span> Movies</td>
+          <td>&#8594;</td>
+          <td><span>Items</span> Products (with category, price)</td>
+        </tr>
+        <tr>
+          <td><span>Tags</span> 1128 crowd-sourced text tags (e.g., "suspenseful")</td>
+          <td>&#8594;</td>
+          <td><span>Tags</span> 9 computed feature dimensions (category one-hot + price + behavior)</td>
+        </tr>
+        <tr>
+          <td><span>P matrix</span> Pre-computed tag genome from MovieLens genome file</td>
+          <td>&#8594;</td>
+          <td><span>P matrix</span> Built in <code>build_P()</code> from product features + behavior totals</td>
+        </tr>
+        <tr>
+          <td><span>R matrix</span> Explicit ratings only (1–5 stars)</td>
+          <td>&#8594;</td>
+          <td><span>R matrix</span> Explicit ratings + implicit behavior scores (both combined in <code>build_R()</code>)</td>
+        </tr>
+        <tr>
+          <td><span>Q matrix</span> User × 1128 tag affinities (GA-optimized)</td>
+          <td>&#8594;</td>
+          <td><span>Q matrix</span> User × 9 tag affinities (GA-optimized) — same concept, fewer dimensions</td>
+        </tr>
+        <tr>
+          <td><span>GA</span> Np=200–400, Ni=2000–4000, Pm=0.5</td>
+          <td>&#8594;</td>
+          <td><span>GA</span> Np=20 (default), Ni=80 (default), Pm=0.05 — smaller due to fewer dimensions</td>
+        </tr>
+        <tr>
+          <td><span>Output</span> R̂ in [1,5] scale (direct)</td>
+          <td>&#8594;</td>
+          <td><span>Output</span> R̂ in [0,1] (requires normalization of R before RMSE — explained below)</td>
+        </tr>
+      </tbody>
+    </table>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- SECTION 1: R MATRIX                                                -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#128200;</div>
+    <div>
+      <h2>Step 1 — Building the R Matrix</h2>
+      <p>Paper: explicit user-item ratings only &nbsp;→&nbsp; Code: explicit + implicit behavior</p>
+    </div>
+  </div>
+  <div>
+
+    <div>
+      <div>
+        <div>&#128196; Paper — Section II</div>
+        <div>
+          <strong>R is a user × item matrix</strong> where R[u][i] = explicit rating (1–5).<br><br>
+          Entries not in the dataset are considered <strong>unknown (missing)</strong>.<br><br>
+          The paper uses <strong>MovieLens ratings.csv</strong> directly, no preprocessing needed.
+          All ratings are already clean integers 1–5.
+        </div>
+      </div>
+      <div>
+        <div>&#128187; Our Code — <code>build_R()</code></div>
+        <div>
+<span>def</span> <span>build_R</span>(ratings_raw, behavior_raw):<br>
+&nbsp;&nbsp;R = {}<br>
+&nbsp;&nbsp;<span># Priority 1: explicit ratings</span><br>
+&nbsp;&nbsp;<span>for</span> row <span>in</span> ratings_raw:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;R[(uid, pid)] = rate<br><br>
+&nbsp;&nbsp;<span># Priority 2: implicit behavior</span><br>
+&nbsp;&nbsp;score = <span>1.0</span> + v*<span>0.1</span> + c*<span>0.5</span> + p*<span>2.0</span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <strong>Why we added implicit behavior:</strong> Real product datasets often have sparse explicit
+      ratings. Using behavioral signals (views, clicks, purchases) lets us infer user interest even
+      when a user never explicitly rated a product. This enriches R without changing the GA structure at all.
+    </div>
+
+    <strong>Implicit Score Formula (our addition):</strong>
+    <div>
+      <div>Implicit Rating from Behavior</div>
+      <div>score = min(5.0, 1.0 + viewed×0.1 + clicked×0.5 + purchased×2.0)</div>
+      <div>
+        A user who viewed (weak signal), clicked (medium), and purchased (strong) gets a high implicit score.
+        Capped at 5.0 to match the explicit rating scale. Explicit ratings always take priority over implicit ones.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- SECTION 2: P MATRIX (TAG GENOME)                                   -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#127991;</div>
+    <div>
+      <h2>Step 2 — Building the P Matrix (Pseudo Tag Genome)</h2>
+      <p>Paper: 1128 crowd-sourced tag scores &nbsp;→&nbsp; Code: 9 engineered feature dimensions</p>
+    </div>
+  </div>
+  <div>
+
+    <p>
+      This is the <strong>most significant adaptation</strong> in our implementation.
+      The paper has a ready-made MovieLens tag genome file. We had to build an equivalent
+      from scratch using only product metadata and behavioral signals.
+    </p>
+
+    <div>
+      <div>
+        <div>&#128196; Paper — Tag Genome</div>
+        <div>
+          The MovieLens "genome" file contains <strong>1128 tags</strong> like:<br><br>
+          • "suspenseful" → Movie A: 0.85, Movie B: 0.12<br>
+          • "visually stunning" → Movie A: 0.91, Movie B: 0.44<br>
+          • "based on novel" → Movie A: 0.05, Movie B: 0.78<br><br>
+          These are human-assigned relevance scores in [0,1] for every (tag, movie) pair.
+          They are <strong>pre-computed and given</strong> — the paper does not build them.
+        </div>
+      </div>
+      <div>
+        <div>&#128187; Our Code — <code>build_P()</code></div>
+        <div>
+<span># Category one-hot (N_cat dimensions)</span><br>
+cat_vec = [<span>1.0</span> <span>if</span> c==cat <span>else</span> <span>0.0</span>]<br><br>
+<span># Normalized price</span><br>
+price_f = price / max_price<br><br>
+<span># Behavioral popularity</span><br>
+view_f  = views[pid]  / max_views<br>
+click_f = clicks[pid] / max_clicks<br>
+purch_f = purch[pid]  / max_purchases<br><br>
+P[pid] = cat_vec + [price_f, view_f, click_f, purch_f]
+        </div>
+      </div>
+    </div>
+
+    <strong>
+      Why these 4 types of features? — Mapping to tag genome semantics:
+    </strong>
+
+    <table>
+      <thead><tr>
+        <th>Tag Genome Concept</th>
+        <th>&#8594;</th>
+        <th>Our Feature Equivalent</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td>"Is this item in genre X?" (e.g., genre: Action, Comedy)</td>
+          <td>&#8594;</td>
+          <td><strong>Category one-hot:</strong> 1.0 if product is in category C, else 0.0</td>
+        </tr>
+        <tr>
+          <td>"Is this item expensive?" (luxury/budget appeal)</td>
+          <td>&#8594;</td>
+          <td><strong>Price level:</strong> product_price / max_price_in_dataset</td>
+        </tr>
+        <tr>
+          <td>"Is this item popular / trending?"</td>
+          <td>&#8594;</td>
+          <td><strong>View-count:</strong> total views / max views across all products</td>
+        </tr>
+        <tr>
+          <td>"Does this item drive engagement?"</td>
+          <td>&#8594;</td>
+          <td><strong>Click-rate + Purchase-rate:</strong> normalized clicks and purchases</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div>
+      <strong>Key constraint maintained:</strong> All P values must be in [0,1] — exactly as in the paper.
+      This ensures Q·Pᵀ also lands in [0,1], maintaining mathematical consistency.
+      We achieve this by dividing every feature by its maximum value across the dataset.
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- SECTION 3: GA INITIALIZATION                                       -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#127801;</div>
+    <div>
+      <h2>Step 3 — GA Initialization</h2>
+      <p>Paper: Equation (3) → Code: <code>init_population()</code></p>
+    </div>
+  </div>
+  <div>
+
+    <div>
+      <div>Paper — Equation (3): Population Initialization</div>
+      <div>Q_k = {q_ui} where q_ui ∈ Uniform[0, 1]</div>
+      <div>
+        Each chromosome k is a Q matrix. Every element q_ui (user u's affinity for tag i)
+        is drawn from a uniform random distribution between 0 and 1.
+      </div>
+    </div>
+
+    <div>
+      <div>
+        <div>&#128196; Paper Pseudocode (Algorithm 1, line 1)</div>
+        <div>
+          <strong>FOR</strong> k = 1 to Np:<br>
+          &nbsp;&nbsp;Initialize Q_k with random values in [0,1]<br>
+          &nbsp;&nbsp;(each row = one user's tag affinity vector)
+        </div>
+      </div>
+      <div>
+        <div>&#128187; Code — <code>init_population(Np, n_users, n_tags)</code></div>
+        <div>
+<span>return</span> [<br>
+&nbsp;&nbsp;[[<span>random</span>() <span>for</span> _ <span>in</span> range(n_tags)]<br>
+&nbsp;&nbsp;&nbsp;<span>for</span> _ <span>in</span> range(n_users)]<br>
+&nbsp;&nbsp;<span>for</span> _ <span>in</span> range(Np)<br>
+]
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <strong>Perfect 1:1 mapping.</strong> The code is a direct 3-level nested list comprehension:
+      outer level = Np chromosomes, middle level = n_users rows, inner level = n_tags genes.
+      Each gene = <code>random.random()</code> which returns a float in [0.0, 1.0].
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- SECTION 4: FITNESS / RMSE                                          -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#127919;</div>
+    <div>
+      <h2>Step 4 — Fitness Function (RMSE)</h2>
+      <p>Paper: Equation (4) → Code: <code>compute_rmse()</code> with scale fix</p>
+    </div>
+  </div>
+  <div>
+
+    <div>
+      <div>Paper — Equation (4): Fitness Function</div>
+      <div>F(Q_k) = RMSE(R, R̂_k) = √( (1/|Ω|) × Σ (r_ui − r̂_ui)² )</div>
+      <div>
+        Ω = set of known (user, item) pairs with actual ratings.<br>
+        r_ui = actual rating, r̂_ui = predicted rating = Q[u] · P[i].
+      </div>
+    </div>
+
+    <div>
+      <div>
+        <div>&#10060; The Scale Problem</div>
+        <div>
+          In the paper, R ∈ [1,5] and Q·Pᵀ also reaches [1,5] because there are
+          <strong>1128 tags</strong> — the cumulative dot product naturally covers [1,5].
+          <br><br>
+          In our system, we have only <strong>9 tag dimensions</strong>.
+          Q·Pᵀ is bounded in [0, 9×1 = 9], but in practice stays in [0, 1] because
+          most category one-hot entries are 0.
+          <br><br>
+          Computing RMSE between R∈[1,5] and Q·Pᵀ∈[0,1] gives a meaningless, inflated error.
+        </div>
+      </div>
+      <div>
+        <div>&#10004; Our Solution: Normalize R to [0,1]</div>
+        <div>
+          Before computing RMSE, we normalize actual ratings to [0,1]:
+          <br><br>
+          <strong>actual_norm = (actual_rating − 1) / 4</strong>
+          <br><br>
+          This maps: 1 → 0.0, 3 → 0.5, 5 → 1.0
+          <br><br>
+          Now both sides are in [0,1], and RMSE is meaningful.
+          The GA still minimizes the same error — just on a different scale.
+        </div>
+      </div>
+    </div>
+
+    <div>
+<span>def</span> <span>compute_rmse</span>(Q, P, R, user_ids):<br>
+&nbsp;&nbsp;uid_idx = {uid: i <span>for</span> i, uid <span>in</span> enumerate(user_ids)}<br>
+&nbsp;&nbsp;sse, n = <span>0.0</span>, <span>0</span><br><br>
+&nbsp;&nbsp;<span>for</span> (uid, pid), actual <span>in</span> R.items():<br>
+<span>&nbsp;&nbsp;&nbsp;&nbsp;actual_norm = (actual - <span>1.0</span>) / <span>4.0</span>  <span># normalize R to [0,1] — our adaptation</span></span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;predicted = dot(Q[uid_idx[uid]], P[pid])  <span># = Q[u] · P[i]</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;sse += (actual_norm - predicted) ** <span>2</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;n += <span>1</span><br><br>
+&nbsp;&nbsp;<span>return</span> math.sqrt(sse / n) <span>if</span> n > <span>0</span> <span>else</span> float(<span>'inf'</span>)
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- SECTION 5: ROULETTE WHEEL SELECTION                                -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#127922;</div>
+    <div>
+      <h2>Step 5 — Roulette Wheel Selection (RWPSA)</h2>
+      <p>Paper: Section III-A, RWPSA → Code: <code>roulette_select()</code></p>
+    </div>
+  </div>
+  <div>
+
+    <div>
+      <div>Paper — Section III-A: Roulette Wheel Parent Selection Algorithm (RWPSA)</div>
+      <div>P(select Q_k) = (1/F_k) / Σ(1/F_j)   where F = RMSE</div>
+      <div>
+        Selection probability is inversely proportional to RMSE.
+        Chromosomes with lower fitness (RMSE) have a higher probability of being selected as parents.
+      </div>
+    </div>
+
+    <div>
+      <div>
+        <div>&#128196; Paper Description</div>
+        <div>
+          1. Compute weight w_k = 1/F_k for each chromosome<br>
+          2. Sum all weights: W_total = Σ w_k<br>
+          3. Generate random r ∈ [0, W_total]<br>
+          4. Walk through chromosomes accumulating weights<br>
+          5. Select the chromosome where cumulative weight ≥ r
+        </div>
+      </div>
+      <div>
+        <div>&#128187; Code — <code>roulette_select()</code></div>
+        <div>
+weights = [<span>1.0</span> / (f + <span>1e-10</span>) <span>for</span> f <span>in</span> fitnesses]<br>
+total = sum(weights)<br>
+pick = random() * total<br>
+cumul = <span>0.0</span><br>
+<span>for</span> chrom, w <span>in</span> zip(population, weights):<br>
+&nbsp;&nbsp;cumul += w<br>
+&nbsp;&nbsp;<span>if</span> cumul >= pick:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span>return</span> chrom
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <strong>The <code>1e-10</code> guard:</strong> We add a tiny epsilon to the denominator
+      to prevent division-by-zero if a chromosome accidentally gets RMSE = 0 (perfect fit).
+      This is a standard numerical safety guard not explicitly mentioned in the paper.
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- SECTION 6: CROSSOVER                                               -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#9986;</div>
+    <div>
+      <h2>Step 6 — Row Crossover</h2>
+      <p>Paper: Section III-B, Example 2 → Code: <code>crossover()</code></p>
+    </div>
+  </div>
+  <div>
+
+    <div>
+      <div>Paper — Section III-B: Single Row Crossover</div>
+      <div>Select random row index r ∈ [1, n_users]</div>
+      <div>
+        Child 1 = rows of Parent 1, except row r which comes from Parent 2.<br>
+        Child 2 = rows of Parent 2, except row r which comes from Parent 1.<br>
+        Applied with probability Pc. If not applied, children = copies of parents.
+      </div>
+    </div>
+
+    <div>
+      <div>
+        <div>&#128196; Paper Example 2 (paraphrased)</div>
+        <div>
+          Parent A = [Row1_A, <strong>Row2_A</strong>, Row3_A]<br>
+          Parent B = [Row1_B, <strong>Row2_B</strong>, Row3_B]<br>
+          Crossover point = row 2<br><br>
+          Child 1 = [Row1_A, <strong>Row2_B</strong>, Row3_A]<br>
+          Child 2 = [Row1_B, <strong>Row2_A</strong>, Row3_B]
+        </div>
+      </div>
+      <div>
+        <div>&#128187; Code — <code>crossover(par1, par2, Pc)</code></div>
+        <div>
+<span>if</span> random() > Pc:<br>
+&nbsp;&nbsp;<span>return</span> par1.copy(), par2.copy()<br><br>
+idx = randint(<span>0</span>, len(par1)-<span>1</span>)<br>
+child1 = [par2[i] <span>if</span> i==idx <span>else</span> par1[i]<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>for</span> i <span>in</span> range(len(par1))]<br>
+child2 = [par1[i] <span>if</span> i==idx <span>else</span> par2[i]<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>for</span> i <span>in</span> range(len(par2))]
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <strong>Direct translation.</strong> The code is a direct Python implementation of the paper's
+      description. The list comprehension with the conditional <code>par2[i] if i==idx else par1[i]</code>
+      precisely replicates the row-swap logic from Example 2 of Section III-B.
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- SECTION 7: MUTATION                                                -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#127808;</div>
+    <div>
+      <h2>Step 7 — Gene Mutation</h2>
+      <p>Paper: Section III-C, Example 3 → Code: <code>mutate()</code> with adjusted Pm</p>
+    </div>
+  </div>
+  <div>
+
+    <div>
+      <div>Paper — Section III-C: Gene Mutation</div>
+      <div>q_ui_new = Uniform[0,1]  if rand() &lt; Pm,  else q_ui_new = q_ui</div>
+      <div>
+        For each gene in the chromosome: with probability Pm, replace it with a new
+        random value from [0,1]. Otherwise, keep the gene unchanged.
+      </div>
+    </div>
+
+    <div>
+      <div>
+        <div>&#128196; Paper Default: Pm = 0.5</div>
+        <div>
+          With 1128 tags, a 50% mutation rate means about <strong>564 genes</strong>
+          mutate per user row. The large tag space means the GA needs aggressive mutation
+          to explore the high-dimensional search space.
+        </div>
+      </div>
+      <div>
+        <div>&#128187; Our Default: Pm = 0.05</div>
+        <div>
+<span># Only 9 tag dimensions → gentler mutation</span><br>
+<span># Pm=0.5 would randomize ~4-5 genes per row</span><br>
+<span># — too disruptive for only 9 genes</span><br>
+<span>return</span> [[<span>random</span>() <span>if</span> <span>random</span>() &lt; Pm<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>else</span> g <span>for</span> g <span>in</span> row]<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>for</span> row <span>in</span> chrom]
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <strong>Why we reduced Pm:</strong> The paper's Pm=0.5 is calibrated for 1128 dimensions.
+      With only 9 tags, Pm=0.5 would randomize ~4–5 of the 9 genes per user row — essentially
+      destroying most of the parent's information each generation. We use Pm=0.05 (1 gene in 20 on average),
+      but the user can experiment with higher values in the demo.
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- SECTION 8: ELITISM + MAIN LOOP                                     -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#127942;</div>
+    <div>
+      <h2>Step 8 — Elitism and the Main GA Loop</h2>
+      <p>Paper: Algorithm 1 → Code: <code>run_ga()</code></p>
+    </div>
+  </div>
+  <div>
+
+    <p>
+      The paper's Algorithm 1 specifies the complete GA loop including elitism (always preserving
+      the best chromosome). Here is the full mapping from pseudocode to Python:
+    </p>
+
+    <div>
+      <div>Initialize<br>Np chromosomes</div>
+      <div>&#8594;</div>
+      <div>Evaluate<br>RMSE all</div>
+      <div>&#8594;</div>
+      <div>Track best<br>(elitism)</div>
+      <div>&#8594;</div>
+      <div>Select parents<br>(Roulette)</div>
+      <div>&#8594;</div>
+      <div>Crossover<br>+ Mutate</div>
+      <div>&#8594;</div>
+      <div>New<br>population</div>
+      <div>&#8594;</div>
+      <div>Repeat<br>Ni times</div>
+    </div>
+
+    <div>
+<span>def</span> <span>run_ga</span>(P, R, user_ids, Np, Ni, Pc, Pm, seed):<br>
+&nbsp;&nbsp;<span># Step 1: Initialize (paper Algorithm 1, line 1)</span><br>
+&nbsp;&nbsp;population = <span>init_population</span>(Np, n_users, n_tags)<br>
+&nbsp;&nbsp;fitnesses  = [<span>compute_rmse</span>(ch, P, R, user_ids) <span>for</span> ch <span>in</span> population]<br><br>
+<span>&nbsp;&nbsp;<span># Track global best for elitism (paper Algorithm 1, line 2)</span></span><br>
+<span>&nbsp;&nbsp;best_Q = population[argmin(fitnesses)]</span><br><br>
+&nbsp;&nbsp;<span>for</span> _ <span>in</span> range(Ni):<br>
+<span>&nbsp;&nbsp;&nbsp;&nbsp;next_pop = [best_Q.copy()]   <span># elitism: carry best forward always</span></span><br>
+<span>&nbsp;&nbsp;&nbsp;&nbsp;next_fit = [best_rmse]</span><br><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span>while</span> len(next_pop) < Np:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p1 = <span>roulette_select</span>(population, fitnesses)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p2 = <span>roulette_select</span>(population, fitnesses)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;c1, c2 = <span>crossover</span>(p1, p2, Pc)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;c1 = <span>mutate</span>(c1, Pm); c2 = <span>mutate</span>(c2, Pm)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span># Add children to next generation</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;next_pop.append(child); next_fit.append(f)<br><br>
+&nbsp;&nbsp;&nbsp;&nbsp;population = next_pop; fitnesses = next_fit<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span># Update global best if this generation improved</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span>if</span> fitnesses[gen_best_i] < best_rmse:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;best_Q = population[gen_best_i]<br><br>
+&nbsp;&nbsp;<span>return</span> best_Q, history
+    </div>
+
+    <div>
+      <strong>Elitism implementation detail:</strong> The paper says "preserve the best chromosome".
+      In code, we start each new generation's population with <code>[best_Q.copy()]</code> — the 
+      best chromosome seen across ALL previous generations (not just the current generation).
+      Then we fill the rest via selection/crossover/mutation.
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- SECTION 9: RECOMMENDATION                                          -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#127775;</div>
+    <div>
+      <h2>Step 9 — Generating Recommendations</h2>
+      <p>Paper: R̂ = Q × Pᵀ → Code: <code>recommend()</code> with top-N filtering</p>
+    </div>
+  </div>
+  <div>
+
+    <div>
+      <div>Paper — Core Prediction Formula</div>
+      <div>r̂_ui = Q[u] · P[i] = Σ_t (q_ut × p_it)</div>
+      <div>
+        The predicted rating of user u for item i is the dot product of their Q row
+        with item i's P vector. This sums up: for each tag t, (how much user u likes t) × (how much item i relates to t).
+      </div>
+    </div>
+
+    <div>
+      <div>
+        <div>&#128196; Paper Output</div>
+        <div>
+          The paper outputs R̂ (full predicted matrix) and evaluates overall RMSE.<br><br>
+          Recommendation = find top-N items with highest predicted rating for each user
+          that are NOT in their known rating set.
+        </div>
+      </div>
+      <div>
+        <div>&#128187; Code — <code>recommend()</code></div>
+        <div>
+q_row = Q[uid_idx[uid]]<br>
+already = {pid <span>for</span> (u,pid) <span>in</span> R <span>if</span> u==uid}<br><br>
+scores = []<br>
+<span>for</span> pid, p_vec <span>in</span> P.items():<br>
+&nbsp;&nbsp;<span>if</span> pid <span>in</span> already: <span>continue</span><br>
+&nbsp;&nbsp;scores.append((pid, <span>dot</span>(q_row, p_vec)))<br><br>
+scores.sort(key=<span>lambda</span> x: -x[<span>1</span>])<br>
+<span>return</span> scores[:top_n]
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <strong>The <code>dot()</code> helper</strong> in our code computes exactly Q[u]·P[i]:
+      <code>sum(x * y for x, y in zip(a, b))</code> — a pure Python dot product without any libraries.
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- COMPLETE FUNCTION MAPPING TABLE                                     -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#128203;</div>
+    <div>
+      <h2>Complete Function Mapping Table</h2>
+      <p>Every paper concept mapped to its exact Python function and line range</p>
+    </div>
+  </div>
+  <div>
+
+    <table>
+      <thead><tr>
+        <th>Paper Concept</th>
+        <th>&#8594;</th>
+        <th>Python Function in app.py</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td>R matrix (user-item ratings)</td>
+          <td>&#8594;</td>
+          <td><code>build_R(ratings_raw, behavior_raw)</code></td>
+        </tr>
+        <tr>
+          <td>P matrix / tag genome (item-tag relevance)</td>
+          <td>&#8594;</td>
+          <td><code>build_P(products, behavior_raw)</code></td>
+        </tr>
+        <tr>
+          <td>Q matrix (user-tag affinity, chromosome)</td>
+          <td>&#8594;</td>
+          <td>Each list element in <code>population</code> inside <code>run_ga()</code></td>
+        </tr>
+        <tr>
+          <td>Eq. (3): Population initialization</td>
+          <td>&#8594;</td>
+          <td><code>init_population(Np, n_users, n_tags)</code></td>
+        </tr>
+        <tr>
+          <td>Eq. (4): Fitness = RMSE(R, Q·Pᵀ)</td>
+          <td>&#8594;</td>
+          <td><code>compute_rmse(Q, P, R, user_ids)</code></td>
+        </tr>
+        <tr>
+          <td>Section III-A: Roulette Wheel Selection (RWPSA)</td>
+          <td>&#8594;</td>
+          <td><code>roulette_select(population, fitnesses)</code></td>
+        </tr>
+        <tr>
+          <td>Section III-B: Single-row crossover (Example 2)</td>
+          <td>&#8594;</td>
+          <td><code>crossover(par1, par2, Pc)</code></td>
+        </tr>
+        <tr>
+          <td>Section III-C: Gene mutation (Example 3)</td>
+          <td>&#8594;</td>
+          <td><code>mutate(chrom, Pm)</code></td>
+        </tr>
+        <tr>
+          <td>Algorithm 1: Full GA loop with elitism</td>
+          <td>&#8594;</td>
+          <td><code>run_ga(P, R, user_ids, Np, Ni, Pc, Pm, seed)</code></td>
+        </tr>
+        <tr>
+          <td>R̂ = Q × Pᵀ prediction + top-N filtering</td>
+          <td>&#8594;</td>
+          <td><code>recommend(Q, P, R, user_ids, products, uid, top_n)</code></td>
+        </tr>
+        <tr>
+          <td>Dot product r̂_ui = Q[u] · P[i]</td>
+          <td>&#8594;</td>
+          <td><code>dot(a, b)</code> helper</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<!-- DESIGN DECISIONS SUMMARY                                           -->
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<div>
+  <div>
+    <div>&#128736;</div>
+    <div>
+      <h2>Design Decisions Summary</h2>
+      <p>Every deviation from the paper and why it was made</p>
+    </div>
+  </div>
+  <div>
+
+    <table>
+      <thead><tr>
+        <th>Paper Approach</th>
+        <th>&#8594;</th>
+        <th>Our Decision &amp; Reason</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td>1128 tag genome (MovieLens)</td>
+          <td>&#8594;</td>
+          <td><span>9 engineered features</span> — No tag genome available; we build one from product features. Maintains the same mathematical role (P matrix in [0,1]).</td>
+        </tr>
+        <tr>
+          <td>Explicit ratings only in R</td>
+          <td>&#8594;</td>
+          <td><span>Explicit + implicit behavior</span> — Implicit signals (views, clicks, purchases) enrich sparse datasets. Explicit ratings take priority.</td>
+        </tr>
+        <tr>
+          <td>RMSE on R∈[1,5] scale directly</td>
+          <td>&#8594;</td>
+          <td><span>Normalize R to [0,1]</span> before RMSE — Required because Q·Pᵀ with 9 tags cannot reach [1,5]. Formula: (r−1)/4.</td>
+        </tr>
+        <tr>
+          <td>Pm = 0.5 (50% mutation rate)</td>
+          <td>&#8594;</td>
+          <td><span>Pm = 0.05 default</span> — With only 9 genes per row, Pm=0.5 is too destructive. User can increase in the demo.</td>
+        </tr>
+        <tr>
+          <td>Np=200–400, Ni=2000–4000 (MovieLens scale)</td>
+          <td>&#8594;</td>
+          <td><span>Np=20, Ni=80 defaults</span> — Smaller dataset converges faster. User-configurable up to Np=200, Ni=500.</td>
+        </tr>
+        <tr>
+          <td>Sample data: MovieLens 20M dataset</td>
+          <td>&#8594;</td>
+          <td><span>Built-in sample: 10 users, 20 products</span> — Works out of the box without any data files via <code>build_sample_data()</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+
+  </div>
+</div>
+
+</div><!-- .page -->
+
+<footer>
+  ETagMF Recommender · IEEE Access 2025 · DOI: 10.1109/ACCESS.2025.3550296
+</footer>
+
+</body>
+</html>
